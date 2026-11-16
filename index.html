@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Gera as declarações de execução de atividades em PDF a partir de uma planilha Excel.">
+<title>Declarações CAp-Coluni</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; }
+  [hidden] { display: none !important; }
+</style>
+<style>
+  /* Layout: coluna única de 3 etapas (planilha, conferência, download), largura de leitura 980px. */
+  :root {
+    --bg: #f3f5f8; --surface: #ffffff; --ink: #17202c; --muted: #596678; --line: #d6dce5;
+    --accent: #2a5298; --accent-ink: #ffffff; --accent-soft: #e5ecf8;
+    --ok: #1c7444; --ok-soft: #e1f2e8; --err: #a1262c; --err-soft: #fbe4e5; --warn: #7d5200; --warn-soft: #faefd6;
+    --grey-row: #f0f3f7;
+    --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10151c; --surface: #172029; --ink: #e8edf4; --muted: #98a6b8; --line: #2a3543;
+      --accent: #86aaec; --accent-ink: #0b1522; --accent-soft: #1b2a43;
+      --ok: #62c68c; --ok-soft: #15301f; --err: #f08c92; --err-soft: #3a1b1e; --warn: #e5b65c; --warn-soft: #33280f;
+      --grey-row: #1b2530;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10151c; --surface: #172029; --ink: #e8edf4; --muted: #98a6b8; --line: #2a3543;
+    --accent: #86aaec; --accent-ink: #0b1522; --accent-soft: #1b2a43;
+    --ok: #62c68c; --ok-soft: #15301f; --err: #f08c92; --err-soft: #3a1b1e; --warn: #e5b65c; --warn-soft: #33280f;
+    --grey-row: #1b2530;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 400 15px/1.55 var(--font-ui);
+    padding-block: 28px 56px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  header { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .eyebrow { font: 500 12px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1 { margin: 0; font: 600 clamp(24px, 4.5vw, 32px)/1.15 var(--font-ui); text-wrap: balance; letter-spacing: -.01em; }
+  .lead { margin: 0; color: var(--muted); max-width: 64ch; }
+  section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .step-head { display: flex; align-items: center; gap: 12px; }
+  .num { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--accent); color: var(--accent);
+    display: grid; place-items: center; font: 500 13px/1 var(--font-mono); }
+  h2 { margin: 0; font: 600 18px/1.25 var(--font-ui); }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+  .drop { display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1.5px dashed var(--line); border-radius: 10px; background: var(--surface);
+    transition: border-color .15s, background-color .15s; }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop p { margin: 0; }
+  .drop .hint { color: var(--muted); font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button { font: 500 14px/1 var(--font-ui); cursor: pointer; border-radius: 8px; padding: 11px 16px; border: 1px solid transparent; min-height: 40px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn-secondary { background: transparent; color: var(--accent); border-color: var(--accent); }
+  .btn-secondary:hover:not(:disabled) { background: var(--accent-soft); }
+  .btn-small { padding: 7px 12px; min-height: 32px; font-size: 13px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 14px; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 99px; font: 500 12px/1.6 var(--font-ui); white-space: nowrap; }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+  .tag.err { background: var(--err-soft); color: var(--err); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  details { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  summary { cursor: pointer; padding: 12px 16px; font-weight: 500; }
+  details > div { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; color: var(--muted); font-size: 14px; }
+  details p { margin: 0; }
+  .cols { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+  .cols dt { font: 500 13px/1.5 var(--font-mono); color: var(--ink); }
+  .cols dd { margin: 0; }
+  .summary { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--muted); }
+  .summary b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tablewrap { position: relative; min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; min-width: 720px; font-size: 14px; }
+  th { text-align: left; font: 500 12px/1.4 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--grey-row); white-space: nowrap; }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th.r, td.r { text-align: right; }
+  .name { font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .act + .act { margin-top: 8px; }
+  tr.bad td { background: var(--err-soft); }
+  .problems { margin: 0; padding: 12px 16px 12px 34px; border: 1px solid var(--err); border-radius: 10px; background: var(--err-soft); color: var(--err); font-size: 14px; }
+  .problems li + li { margin-top: 4px; }
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+  .option { padding: 18px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .option h3 { margin: 0; font: 600 16px/1.3 var(--font-ui); }
+  .option p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
+  .msg { padding: 10px 14px; border-radius: 8px; font-size: 14px; }
+  .msg.ok { background: var(--ok-soft); color: var(--ok); }
+  .msg.err { background: var(--err-soft); color: var(--err); }
+  .msg.info { background: var(--accent-soft); color: var(--ink); }
+  .fields { display: flex; flex-wrap: wrap; gap: 12px; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .field input { font: 400 14px/1.3 var(--font-ui); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; min-width: 0; }
+  .field.grow { flex: 1 1 240px; } .field.year { width: 110px; }
+  .note { margin: 0; font-size: 13px; color: var(--muted); max-width: 72ch; }
+  @media (max-width: 520px) { .cols { grid-template-columns: 1fr; gap: 0; } .cols dd { margin-bottom: 8px; } }
+
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <div class="eyebrow">Lei 8.112/1990, art. 76-A</div>
+    <h1>Declarações de Execução de Atividades</h1>
+    <p class="lead">Carregue a planilha com os servidores e gere as declarações conforme modelo. Nome, SIAPE, cargo, atividade, horas e período vêm da planilha.</p>
+  </header>
+
+    <details>
+      <summary>Ajustar o texto da declaração</summary>
+      <div>
+        <div class="fields">
+          <label class="field grow" for="in-exame">Texto do exame<input id="in-exame" type="text" value="Exame de Seleção do CAp-Coluni 2027" autocomplete="off"></label>
+          <label class="field year" for="in-ano">Ano da data<input id="in-ano" type="text" value="2026" inputmode="numeric" autocomplete="off"></label>
+        </div>
+        <p>O texto do exame entra no primeiro parágrafo, logo depois de “relacionadas ao” e antes de “, da Universidade Federal de Viçosa”. O ano aparece na linha da data, antes da assinatura.</p>
+      </div>
+    </details>
+
+  <section aria-labelledby="h-1">
+    <div class="step-head"><span class="num">1</span><h2 id="h-1">Planilha</h2></div>
+    <div class="drop" id="drop">
+      <p><strong>Arraste a planilha aqui</strong> <span class="hint">ou escolha o arquivo (.xlsx, .xls ou .csv).</span></p>
+      <div class="row">
+        <button type="button" class="btn-primary" id="btn-pick">Escolher planilha</button>
+        <button type="button" class="btn-secondary" id="btn-template">Baixar planilha modelo</button>
+        <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
+      </div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+    <details>
+      <summary>Como preencher a planilha</summary>
+      <div>
+        <p>Uma linha por atividade. A primeira linha traz os títulos das colunas, nesta ordem:</p>
+        <dl class="cols">
+          <dt>Nome</dt><dd>Nome completo. Sai em maiúsculas na declaração e dá nome ao arquivo.</dd>
+          <dt>SIAPE</dt><dd>Matrícula, só números.</dd>
+          <dt>Cargo</dt><dd>Por exemplo, Assistente em Administração.</dd>
+          <dt>Atividade</dt><dd>Texto da atividade, exatamente como deve aparecer na declaração.</dd>
+          <dt>Horas</dt><dd>Horas trabalhadas, por exemplo 48 ou 12,5.</dd>
+          <dt>Início, Fim</dt><dd>Período da atividade, como data do Excel ou texto dd/mm/aaaa.</dd>
+        </dl>
+        <p>Quem fez mais de uma atividade tem uma linha para cada uma, com o mesmo nome e SIAPE. Todas saem na mesma declaração e o total é somado.</p>
+      </div>
+    </details>
+  </section>
+
+  <section aria-labelledby="h-2">
+    <div class="step-head"><span class="num">2</span><h2 id="h-2">Conferência</h2></div>
+    <div class="summary" id="summary"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Servidor</th><th>Atividade e período</th><th class="r">Horas</th><th>Situação</th><th><span class="sr">PDF</span></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <ul class="problems" id="problems" hidden></ul>
+  </section>
+
+  <section aria-labelledby="h-3">
+    <div class="step-head"><span class="num">3</span><h2 id="h-3">Baixar</h2></div>
+    <div class="options">
+      <div class="panel option">
+        <h3>Um único PDF</h3>
+        <p id="txt-single">Todas as declarações em um arquivo, uma por página.</p>
+        <button type="button" class="btn-primary" id="btn-single">Baixar PDF único</button>
+      </div>
+      <div class="panel option">
+        <h3>Um PDF por pessoa</h3>
+        <p>Cada declaração em seu próprio arquivo, com o nome do servidor como nome do arquivo, reunidos em um ZIP.</p>
+        <button type="button" class="btn-primary" id="btn-zip">Baixar ZIP com PDFs individuais</button>
+      </div>
+    </div>
+    <div class="msg info" id="msg" role="status" hidden></div>
+    <p class="note">O navegador pode pedir confirmação a cada arquivo salvo; por isso os individuais vão reunidos em um ZIP. Para baixar só uma pessoa, use o botão PDF na linha dela, na tabela.</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+/* ===== Núcleo: leitura da planilha e geração dos PDFs ===== */
+const PAGE_W = 595.32, PAGE_H = 841.92;
+const ML = 70.944, MR = 538.704, TW = MR - ML;
+const SPACE_SIZE = 10;
+
+const ACTIVITIES = [
+  { id: 1, lines: ['Elaboração/revisão técnica/análise de', 'recursos/correção de provas'],
+    label: 'Elaboração/Revisão técnica/Análise de recursos/Correção de provas' },
+  { id: 2, lines: ['Revisão pedagógica/Língua portuguesa (análise crítica)'],
+    label: 'Revisão pedagógica/Língua portuguesa (análise crítica)' },
+  { id: 3, lines: ['Coordenação/Supervisão'],
+    label: 'Coordenação/Supervisão' },
+  { id: 4, lines: ['Apoio Logístico/ Formatação/ Processamento/', 'Atividades de aplicação de provas'],
+    label: 'Apoio logístico/Formatação/Processamento/Atividades de aplicação de provas' }
+];
+
+const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase().replace(/\s+/g, ' ').trim();
+
+function matchActivity(raw) {
+  const n = norm(raw);
+  if (!n) return null;
+  if (/^[1-4]$/.test(n)) return ACTIVITIES[Number(n) - 1];
+  if (/pedagog|portugues|critica/.test(n)) return ACTIVITIES[1];
+  if (/coorden|supervis/.test(n)) return ACTIVITIES[2];
+  if (/apoio|logist|formata|processa|aplicac/.test(n)) return ACTIVITIES[3];
+  if (/elabora|tecnica|recurso|correc|prova/.test(n)) return ACTIVITIES[0];
+  return null;
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function validDate(y, m, d) {
+  if (y < 1900 || y > 2100) return null;
+  const t = new Date(Date.UTC(y, m - 1, d));
+  if (t.getUTCFullYear() !== y || t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return null;
+  return { y, m, d };
+}
+
+function parseDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v) ? null : validDate(v.getFullYear(), v.getMonth() + 1, v.getDate());
+  if (typeof v === 'number') {
+    if (v < 20000 || v > 80000) return null;
+    const t = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+    return validDate(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/);
+  if (m) {
+    let y = Number(m[3]); if (y < 100) y += 2000;
+    return validDate(y, Number(m[2]), Number(m[1]));
+  }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return validDate(Number(m[1]), Number(m[2]), Number(m[3]));
+  return null;
+}
+const fmtDate = t => pad2(t.d) + '/' + pad2(t.m) + '/' + t.y;
+const dateKey = t => t.y * 10000 + t.m * 100 + t.d;
+
+function parseHours(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : NaN;
+  let s = String(v == null ? '' : v).replace(/\s/g, '').replace(/[^\d,.\-]/g, '');
+  if (!s) return NaN;
+  if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (s.includes(',')) s = s.replace(',', '.');
+  return parseFloat(s);
+}
+const fmtHours = h => h.toFixed(2).replace('.', ',');
+
+const EXTRA_WINANSI = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+function winAnsiOk(s) {
+  for (const ch of String(s)) {
+    const c = ch.codePointAt(0);
+    if ((c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || EXTRA_WINANSI.includes(ch)) continue;
+    return false;
+  }
+  return true;
+}
+
+const HEADER_RULES = [
+  ['nome', c => /^(nome|servidor)/.test(c)],
+  ['siape', c => /siape|matricula/.test(c)],
+  ['cargo', c => /^cargo/.test(c)],
+  ['atividade', c => /^atividade/.test(c)],
+  ['horas', c => /^horas|carga/.test(c)],
+  ['inicio', c => /inicio|inicial/.test(c)],
+  ['fim', c => /\bfim\b|termino|final/.test(c)]
+];
+const COLUMN_NAMES = { nome: 'Nome', siape: 'SIAPE', cargo: 'Cargo', atividade: 'Atividade', horas: 'Horas', inicio: 'Início', fim: 'Fim' };
+
+function mapColumns(aoa) {
+  for (let r = 0; r < Math.min(aoa.length, 10); r++) {
+    const cells = (aoa[r] || []).map(norm);
+    if (!cells.some(c => /^(nome|servidor)/.test(c))) continue;
+    const map = {};
+    cells.forEach((c, i) => {
+      for (const [key, test] of HEADER_RULES) {
+        if (map[key] === undefined && c && test(c)) { map[key] = i; break; }
+      }
+    });
+    return { headerRow: r, map };
+  }
+  return { headerRow: 0, map: { nome: 0, siape: 1, cargo: 2, atividade: 3, horas: 4, inicio: 5, fim: 6 }, positional: true };
+}
+
+/** Converte as linhas da planilha (array de arrays) em declarações. */
+function parseSheet(aoa) {
+  const { headerRow, map, positional } = mapColumns(aoa);
+  const missing = Object.keys(COLUMN_NAMES).filter(k => map[k] === undefined);
+  if (missing.length) {
+    return { people: [], fatal: 'Não encontrei as colunas: ' + missing.map(k => COLUMN_NAMES[k]).join(', ') + '. Use a planilha modelo.' };
+  }
+  const people = [];
+  const index = new Map();
+  for (let r = headerRow + 1; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    const get = k => row[map[k]];
+    const cells = Object.keys(COLUMN_NAMES).map(get);
+    if (cells.every(v => v === '' || v == null)) continue;
+    const line = r + 1;
+    const errs = [];
+
+    const nome = String(get('nome') == null ? '' : get('nome')).replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
+    const siape = String(get('siape') == null ? '' : get('siape')).replace(/\D/g, '');
+    const cargo = String(get('cargo') == null ? '' : get('cargo')).replace(/\s+/g, ' ').trim();
+    const atividade = String(get('atividade') == null ? '' : get('atividade')).replace(/\s+/g, ' ').trim();
+    const act = atividade ? { label: atividade } : null;
+    const horas = parseHours(get('horas'));
+    const ini = parseDate(get('inicio'));
+    const fim = parseDate(get('fim'));
+
+    if (!winAnsiOk(nome) || !winAnsiOk(cargo)) errs.push('nome ou cargo com caractere que o PDF não suporta');
+    if (!nome) errs.push('nome em branco');
+    if (!siape) errs.push('SIAPE em branco');
+    if (!cargo) errs.push('cargo em branco');
+    if (!act) errs.push('atividade em branco');
+    else if (!winAnsiOk(atividade)) errs.push('atividade com caractere que o PDF não suporta');
+    if (!(horas > 0)) errs.push('horas inválidas');
+    if (!ini) errs.push('data de início inválida');
+    if (!fim) errs.push('data de fim inválida');
+    if (ini && fim && dateKey(fim) < dateKey(ini)) errs.push('fim anterior ao início');
+
+    const key = nome + '|' + siape;
+    let p = index.get(key);
+    if (!p) {
+      p = { key, nome, siape, cargo, rows: [], errors: [], total: 0 };
+      index.set(key, p); people.push(p);
+    }
+    if (!p.cargo && cargo) p.cargo = cargo;
+    if (errs.length) p.errors.push('Linha ' + line + ': ' + errs.join(', '));
+    else {
+      p.rows.push({ act, horas, ini, fim, line });
+      p.total += horas;
+    }
+  }
+  people.forEach(p => { p.valid = p.errors.length === 0 && p.rows.length > 0; });
+  return { people, positional: !!positional };
+}
+
+/* ---------- PDF ---------- */
+
+const safeFileName = (nome, fallback) => {
+  let s = String(nome || '').replace(/[\\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
+  if (s.length > 120) s = s.slice(0, 120).trim();
+  return s || fallback || 'declaracao';
+};
+
+function scRuns(text, size) {
+  const out = [];
+  const small = size * 0.8;
+  for (const ch of text) {
+    const lower = ch !== ch.toUpperCase();
+    const t = lower ? ch.toUpperCase() : ch;
+    const s = lower ? small : size;
+    if (out.length && out[out.length - 1].size === s) out[out.length - 1].t += t;
+    else out.push({ t, size: s });
+  }
+  return out;
+}
+
+function tokenize(segs) {
+  const tokens = [];
+  let cur = null;
+  const flush = () => { if (cur) { tokens.push(cur); cur = null; } };
+  for (const s of segs) {
+    if (s.sup) {
+      if (!cur) cur = { runs: [] };
+      cur.runs.push({ text: s.t, size: 6, rise: 3, b: false, u: false });
+      continue;
+    }
+    s.t.split(' ').forEach((part, i) => {
+      if (i > 0) flush();
+      if (part) {
+        if (!cur) cur = { runs: [] };
+        cur.runs.push({ text: part, size: 10, rise: 0, b: !!s.b, u: !!s.u });
+      }
+    });
+  }
+  flush();
+  return tokens;
+}
+
+function buildPageContent(page, F, rgb, person, opts) {
+  const Y = t => PAGE_H - t;
+  const black = rgb(0, 0, 0);
+  const wOf = (font, size, str) => font.widthOfTextAtSize(str, size);
+  const text = (str, x, base, font, size, rise) =>
+    page.drawText(str, { x, y: Y(base) + (rise || 0), size, font, color: black });
+  const rect = (x, top, w, h, color) =>
+    page.drawRectangle({ x, y: Y(top + h), width: w, height: h, color });
+  const hline = (xa, xb, yc, th) => rect(xa, yc - th / 2, xb - xa, th, black);
+  const vline = (xc, ya, yb, th) => rect(xc - th / 2, ya, th, yb - ya, black);
+
+  const scWidth = (font, str, size) => scRuns(str, size).reduce((a, r) => a + wOf(font, r.size, r.t), 0);
+  const drawSC = (str, x, base, font, size) => {
+    let cx = x;
+    for (const r of scRuns(str, size)) { text(r.t, cx, base, font, r.size); cx += wOf(font, r.size, r.t); }
+  };
+  const drawSCCentered = (str, cxMid, base, font, size) =>
+    drawSC(str, cxMid - scWidth(font, str, size) / 2, base, font, size);
+  const centered = (str, cxMid, base, font, size) =>
+    text(str, cxMid - wOf(font, size, str) / 2, base, font, size);
+
+  // Parágrafo justificado com trechos em negrito/sublinhado
+  const paragraph = (segs, firstBase, pitch) => {
+    const tokens = tokenize(segs);
+    const fontOf = r => (r.b ? F.b : F.r);
+    tokens.forEach(t => { t.w = t.runs.reduce((a, r) => a + wOf(fontOf(r), r.size, r.text), 0); });
+    const space = wOf(F.r, SPACE_SIZE, ' ');
+    const lines = [];
+    let line = [], width = 0;
+    for (const t of tokens) {
+      const need = line.length ? width + space + t.w : t.w;
+      if (line.length && need > TW + 0.01) { lines.push(line); line = [t]; width = t.w; }
+      else { line.push(t); width = need; }
+    }
+    if (line.length) lines.push(line);
+    lines.forEach((ln, li) => {
+      const base = firstBase + li * pitch;
+      const natural = ln.reduce((a, t) => a + t.w, 0);
+      const last = li === lines.length - 1;
+      const gap = (!last && ln.length > 1) ? (TW - natural) / (ln.length - 1) : space;
+      let x = ML;
+      ln.forEach((t, ti) => {
+        let cx = x;
+        for (const r of t.runs) {
+          const font = fontOf(r);
+          text(r.text, cx, base, font, r.size, r.rise);
+          const rw = wOf(font, r.size, r.text);
+          if (r.u) hline(cx, cx + rw, base + 1.3, 0.6);
+          cx += rw;
+        }
+        const nxt = ln[ti + 1];
+        const lastRun = t.runs[t.runs.length - 1];
+        if (nxt && lastRun.u && nxt.runs[0].u) hline(cx, cx + gap, base + 1.3, 0.6);
+        x = cx + gap;
+      });
+    });
+    return lines.length;
+  };
+
+  /* Cabeçalho */
+  drawSC('Universidade Federal de Viçosa', 73.7, 26.55, F.r, 10);
+  hline(ML, MR, 31.7, 0.96);
+
+  /* Título */
+  centered('DECLARAÇÃO DE EXECUÇÃO DE ATIVIDADES', (ML + MR) / 2, 82.88, F.b, 10);
+
+  /* Parágrafo de abertura */
+  paragraph([
+    { t: 'Pela presente declaração de atividades, eu ' },
+    { t: person.nome + ',', b: 1 },
+    { t: ' matrícula SIAPE N' }, { t: 'o', sup: 1 },
+    { t: ' ' }, { t: person.siape, b: 1 },
+    { t: ', ocupante do cargo de ' }, { t: person.cargo, b: 1 },
+    { t: ', do quadro de pessoal do ' }, { t: 'Ministério da Educação', b: 1, u: 1 },
+    { t: ', em exercício na ' }, { t: 'Universidade Federal de Viçosa', b: 1, u: 1 },
+    { t: ', declaro ter participado, no ano em curso, das atividades abaixo listadas, relacionadas ao ' + opts.exame + ', da Universidade Federal de Viçosa, previstas no art. 76-A da Lei 8.112 de 11/12/1990 e no Decreto 11.069, de 10 de maio de 2022.' }
+  ], 124.4, 16.02);
+
+  /* Tabela: só as linhas das atividades preenchidas */
+  const X0 = 71.04, X1 = 340.32, X2 = 418.32, X3 = 538.8;
+  const GREY = rgb(217 / 255, 217 / 255, 217 / 255);
+  const yTop = 213.05, yHead = 243.96;
+  const c1 = (X0 + X1) / 2, c2 = (X1 + X2) / 2, c3 = (X2 + X3) / 2;
+
+  const ACT_MAX = X1 - X0 - 2 * 2.6 - 4;
+  const wrapAct = str => {
+    const words = [];
+    str.split(' ').forEach(w => {
+      if (scWidth(F.r, w, 10) <= ACT_MAX) { words.push(w); return; }
+      let piece = '';
+      for (const part of w.split(/(?<=\/)/)) {
+        if (piece && scWidth(F.r, piece + part, 10) > ACT_MAX) { words.push(piece); piece = part; }
+        else piece += part;
+      }
+      while (scWidth(F.r, piece, 10) > ACT_MAX) {
+        let k = piece.length;
+        while (k > 1 && scWidth(F.r, piece.slice(0, k), 10) > ACT_MAX) k--;
+        words.push(piece.slice(0, k)); piece = piece.slice(k);
+      }
+      words.push(piece);
+    });
+    const lines = []; let cur2 = '';
+    words.forEach(w => {
+      const t = cur2 ? cur2 + ' ' + w : w;
+      if (cur2 && scWidth(F.r, t, 10) > ACT_MAX) { lines.push(cur2); cur2 = w; } else cur2 = t;
+    });
+    if (cur2) lines.push(cur2);
+    return lines;
+  };
+  const rows = person.rows.map(r => ({ r, lines: wrapAct(r.act.label) }));
+  const heights = rows.map(x => (x.lines.length === 1 ? 22 : 5.3 + x.lines.length * 11.5));
+  const rowTops = [];
+  let cur = yHead;
+  heights.forEach(h => { rowTops.push(cur); cur += h; });
+  const yRowsEnd = cur;
+  const yTot0 = yRowsEnd + 2.9, yBot = yTot0 + 17.02;
+
+  rows.forEach((_, i) => { if (i % 2 === 0) rect(X0, rowTops[i], X3 - X0, heights[i], GREY); });
+  rect(X0, yTot0, X3 - X0, yBot - yTot0, GREY);
+  hline(X0, X3, yTop, 1.5);
+  hline(X0, X3, yHead, 1.5);
+  rowTops.slice(1).forEach(y => hline(X0, X3, y, 0.5));
+  hline(X0, X3, yRowsEnd, 1.5);
+  hline(X0, X3, yTot0, 1.5);
+  hline(X0, X3, yBot, 1.5);
+  [X0, X1, X2, X3].forEach(x => vline(x, yTop - 0.75, yBot + 0.75, 1.44));
+
+  drawSCCentered('Atividade', c1, 232.52, F.b, 10);
+  drawSCCentered('Horas', c2, 226.74, F.b, 10);
+  drawSCCentered('trabalhadas', c2, 238.3, F.b, 10);
+  drawSCCentered('Período', c3, 232.52, F.b, 10);
+
+  rows.forEach(({ r, lines }, i) => {
+    const n = lines.length;
+    const b1 = rowTops[i] + (n === 1 ? 14.85 : 12.3);
+    lines.forEach((ln, j) => drawSC(ln, 73.65, b1 + j * 11.5, F.r, 10));
+    const bv = b1 + (n - 1) * 5.75;
+    centered(fmtHours(r.horas), c2, bv, F.r, 10);
+    centered(fmtDate(r.ini) + ' a ' + fmtDate(r.fim), c3, bv, F.r, 10);
+  });
+  text('TOTAL DE HORAS TRABALHADAS', 73.65, yTot0 + 12.44, F.b, 10);
+  centered(fmtHours(person.total), c2, yTot0 + 12.44, F.b, 10);
+
+  /* Ciência (posição acompanha o fim da tabela) */
+  const yPara2 = yBot + 20.92;
+  paragraph([
+    { t: 'Declaro estar ciente que, nos termos do § 2º do art. 76-A da Lei 8.112 de 11/12/1990 e do art. 7º do Decreto 11.069 de 10/05/2022, as horas trabalhadas, quando desempenhadas durante a minha jornada de trabalho, deverão ser compensadas no prazo de até um ano. Declaro, sob minha inteira responsabilidade, serem exatas e verdadeiras as informações aqui prestadas, sob pena de responsabilidade administrativa, civil e penal.' }
+  ], yPara2, 15.97);
+
+  /* Data e assinatura */
+  centered('Viçosa, ____ de ________________ de ' + opts.ano + '.', (ML + MR) / 2, yPara2 + 103.5, F.r, 10);
+  centered(person.nome, (ML + MR) / 2, yPara2 + 195.1, F.b, 10);
+}
+
+/** Gera um PDF (uma página por pessoa) e devolve os bytes. */
+async function makePdf(PDFLib, people, opts) {
+  const doc = await PDFLib.PDFDocument.create();
+  const F = {
+    r: await doc.embedFont(PDFLib.StandardFonts.Helvetica),
+    b: await doc.embedFont(PDFLib.StandardFonts.HelveticaBold)
+  };
+  doc.setTitle('Declaração de Execução de Atividades');
+  doc.setCreator('Gerador de Declarações');
+  doc.setProducer('Gerador de Declarações');
+  for (const p of people) {
+    const page = doc.addPage([PAGE_W, PAGE_H]);
+    buildPageContent(page, F, PDFLib.rgb, p, opts);
+  }
+  return await doc.save();
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { winAnsiOk, parseSheet, makePdf, safeFileName, matchActivity, parseDate, parseHours, fmtHours, fmtDate, ACTIVITIES };
+}
+
+</script>
+<script>
+
+(function () {
+  const $ = id => document.getElementById(id);
+  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+  const SAMPLE_AOA = [
+    ['Nome', 'SIAPE', 'Cargo', 'Atividade', 'Horas', 'Início', 'Fim'],
+    ['NOME DO SERVIDOR 1', '1234567', 'Auxiliar em Administração', ACTIVITIES[2].label, 10, '01/06/2026', '15/12/2026'],
+    ['NOME DO SERVIDOR 2', '1234567', 'Assistente em Administração', ACTIVITIES[2].label, 10, '01/06/2026', '15/12/2026'],
+    ['NOME DO SERVIDOR 3', '1234567', 'Assistente em Administração', ACTIVITIES[3].label, 12, '01/08/2026', '30/11/2026'],
+    ['NOME DO SERVIDOR 4', '1234567', 'Auxiliar em Administração', ACTIVITIES[3].label, 12, '01/08/2026', '30/11/2026']
+  ];
+
+  let people = [];
+  let sourceName = '';
+  let isExample = true;
+  let busy = false;
+
+
+  function say(kind, msg) {
+    const m = $('msg');
+    m.className = 'msg ' + kind;
+    m.textContent = msg || '';
+    m.hidden = !msg;
+  }
+
+  function getOpts() {
+    return { exame: $('in-exame').value.trim() || 'Exame de Seleção do CAp-Coluni 2027', ano: $('in-ano').value.trim() || String(new Date().getFullYear()) };
+  }
+
+  function optsOk(o) {
+    if (!winAnsiOk(o.exame) || !winAnsiOk(o.ano)) {
+      say('err', 'O texto do exame ou o ano tem um caractere que o PDF não suporta. Ajuste em "Ajustar o texto da declaração".');
+      return false;
+    }
+    return true;
+  }
+
+  function validPeople() { return people.filter(p => p.valid); }
+
+  function setBusy(b) { busy = b; render(true); }
+
+  function render(keepMsg) {
+    const ok = validPeople();
+    const bad = people.length - ok.length;
+
+    const st = $('status');
+    st.textContent = '';
+    if (isExample) {
+      st.appendChild(el('span', 'tag warn', 'Exemplo'));
+      st.appendChild(el('span', null, 'Mostrando os 4 servidores do PDF que você enviou. Carregue sua planilha para substituir.'));
+    } else {
+      st.appendChild(el('span', 'tag ok', 'Carregada'));
+      st.appendChild(el('span', null, sourceName));
+    }
+
+    const sm = $('summary');
+    sm.textContent = '';
+    const addStat = (n, label) => { const s = el('span'); s.appendChild(el('b', null, String(n))); s.appendChild(document.createTextNode(' ' + label)); sm.appendChild(s); };
+    addStat(people.length, people.length === 1 ? 'declaração' : 'declarações');
+    addStat(ok.length, ok.length === 1 ? 'pronta' : 'prontas');
+    if (bad) addStat(bad, bad === 1 ? 'com pendência' : 'com pendências');
+    addStat(fmtHours(ok.reduce((a, p) => a + p.total, 0)), 'horas no total');
+
+    const tb = $('rows');
+    tb.textContent = '';
+    if (!people.length) {
+      const tr = el('tr'); const td = el('td', 'sub', 'Nenhuma linha de dados encontrada na planilha.'); td.colSpan = 5; tr.appendChild(td); tb.appendChild(tr);
+    }
+    people.forEach(p => {
+      const tr = el('tr', p.valid ? '' : 'bad');
+      const t1 = el('td');
+      t1.appendChild(el('div', 'name', p.nome || '(sem nome)'));
+      const sub = el('div', 'sub');
+      sub.appendChild(document.createTextNode((p.cargo || 'sem cargo') + ' · SIAPE '));
+      sub.appendChild(el('span', 'mono', p.siape || '—'));
+      t1.appendChild(sub);
+      const t2 = el('td');
+      p.rows.forEach(r => {
+        const a = el('div', 'act');
+        a.appendChild(el('div', null, r.act.label));
+        a.appendChild(el('div', 'sub mono', fmtDate(r.ini) + ' a ' + fmtDate(r.fim) + ' · ' + fmtHours(r.horas) + ' h'));
+        t2.appendChild(a);
+      });
+      if (!p.rows.length) t2.appendChild(el('span', 'sub', 'Sem atividade válida'));
+      const t3 = el('td', 'r mono', p.valid ? fmtHours(p.total) : '—');
+      const t4 = el('td');
+      t4.appendChild(el('span', 'tag ' + (p.valid ? 'ok' : 'err'), p.valid ? 'Pronta' : 'Revisar'));
+      const t5 = el('td', 'r');
+      const b = el('button', 'btn-secondary btn-small', 'PDF');
+      b.type = 'button';
+      b.disabled = !p.valid || busy;
+      b.title = 'Baixar a declaração de ' + (p.nome || 'esta pessoa');
+      b.addEventListener('click', () => downloadOne(p));
+      t5.appendChild(b);
+      [t1, t2, t3, t4, t5].forEach(t => tr.appendChild(t));
+      tb.appendChild(tr);
+    });
+
+    const pr = $('problems');
+    pr.textContent = '';
+    const msgs = [];
+    people.forEach(p => p.errors.forEach(e => msgs.push((p.nome ? p.nome + ' — ' : '') + e)));
+    msgs.forEach(m => pr.appendChild(el('li', null, m)));
+    pr.hidden = !msgs.length;
+
+    $('btn-single').disabled = busy || !ok.length;
+    $('btn-zip').disabled = busy || !ok.length;
+    $('btn-pick').disabled = busy;
+    $('btn-template').disabled = busy;
+    $('txt-single').textContent = ok.length
+      ? 'Todas as ' + ok.length + (ok.length === 1 ? ' declaração' : ' declarações') + ' em um arquivo, uma por página.'
+      : 'Todas as declarações em um arquivo, uma por página.';
+    if (!keepMsg) say('', '');
+  }
+
+  const MIME = { pdf: 'application/pdf', zip: 'application/zip', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+  function browserDownload(filename, data) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const blob = data instanceof Blob ? data : new Blob([data], { type: MIME[ext] || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 5000);
+  }
+
+  async function saveFile(filename, data) {
+    const inClaude = !!(window.claude && window.claude.use);
+    let dl = null;
+    try { dl = inClaude ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+    if (!dl) {
+      if (!inClaude) {
+        try { browserDownload(filename, data); say('ok', 'Download iniciado: ' + filename); return true; }
+        catch (e) { say('err', 'O navegador não permitiu iniciar o download.'); return false; }
+      }
+      say('err', 'Salvar arquivos não está disponível nesta visualização. Abra o artefato no claude.ai para baixar.');
+      return false;
+    }
+    try {
+      await dl.save({ filename, data });
+      say('ok', 'Arquivo salvo: ' + filename);
+      return true;
+    } catch (e) {
+      const code = e && e.code;
+      if (code === 'declined') say('info', 'Download cancelado.');
+      else if (code === 'rate_limited') say('err', 'Já há uma confirmação de download aberta. Responda a ela e tente de novo.');
+      else if (code === 'too_large') say('err', 'O arquivo ficou grande demais para salvar. Gere por partes, com menos linhas na planilha.');
+      else say('err', 'Não foi possível salvar o arquivo' + (code ? ' (' + code + ')' : '') + '.');
+      return false;
+    }
+  }
+
+  function libsOk(needZip) {
+    if (typeof PDFLib === 'undefined' || (needZip && typeof JSZip === 'undefined')) {
+      say('err', 'Uma biblioteca não carregou (verifique a conexão) e a página precisa ser recarregada.');
+      return false;
+    }
+    return true;
+  }
+
+  async function downloadOne(p) {
+    const o = getOpts();
+    if (!optsOk(o) || !libsOk(false)) return;
+    setBusy(true);
+    try {
+      const bytes = await makePdf(PDFLib, [p], o);
+      await saveFile(safeFileName(p.nome) + '.pdf', bytes);
+    } catch (e) { say('err', 'Erro ao gerar o PDF: ' + (e && e.message ? e.message : e)); }
+    setBusy(false);
+  }
+
+  async function downloadSingle() {
+    const o = getOpts();
+    if (!optsOk(o) || !libsOk(false)) return;
+    setBusy(true);
+    try {
+      const bytes = await makePdf(PDFLib, validPeople(), o);
+      await saveFile('Declarações de Execução de Atividades.pdf', bytes);
+    } catch (e) { say('err', 'Erro ao gerar o PDF: ' + (e && e.message ? e.message : e)); }
+    setBusy(false);
+  }
+
+  async function downloadZip() {
+    const o = getOpts();
+    if (!optsOk(o) || !libsOk(true)) return;
+    setBusy(true);
+    try {
+      const zip = new JSZip();
+      const used = new Set();
+      for (const p of validPeople()) {
+        const bytes = await makePdf(PDFLib, [p], o);
+        let base = safeFileName(p.nome, 'declaracao'), name = base, n = 2;
+        while (used.has(name.toLowerCase())) name = base + ' (' + (n++) + ')';
+        used.add(name.toLowerCase());
+        zip.file(name + '.pdf', bytes);
+      }
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      await saveFile('Declarações individuais.zip', blob);
+    } catch (e) { say('err', 'Erro ao gerar o ZIP: ' + (e && e.message ? e.message : e)); }
+    setBusy(false);
+  }
+
+  async function loadFile(file) {
+    if (!file) return;
+    if (typeof XLSX === 'undefined') { say('err', 'A biblioteca de planilhas não carregou. Recarregue a página.'); return; }
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const sheetName = wb.SheetNames.find(n => norm(n).startsWith('declara')) || wb.SheetNames[0];
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: '' });
+      const res = parseSheet(aoa);
+      if (res.fatal) { say('err', res.fatal); return; }
+      people = res.people;
+      sourceName = file.name + ' · aba ' + sheetName;
+      isExample = false;
+      render();
+      if (res.positional) say('info', 'Não achei a linha de títulos; li as colunas na ordem do modelo (Nome, SIAPE, Cargo, Atividade, Horas, Início, Fim).');
+    } catch (e) {
+      say('err', 'Não consegui ler esse arquivo. Confira se é uma planilha .xlsx, .xls ou .csv.');
+    }
+  }
+
+  async function downloadTemplate() {
+    if (typeof XLSX === 'undefined') { say('err', 'A biblioteca de planilhas não carregou. Recarregue a página.'); return; }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(SAMPLE_AOA);
+    ws['!cols'] = [{ wch: 36 }, { wch: 10 }, { wch: 28 }, { wch: 66 }, { wch: 8 }, { wch: 12 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Declarações');
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    await saveFile('modelo-declaracoes.xlsx', new Uint8Array(out));
+  }
+
+  $('btn-pick').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+  $('btn-template').addEventListener('click', downloadTemplate);
+  $('btn-single').addEventListener('click', downloadSingle);
+  $('btn-zip').addEventListener('click', downloadZip);
+  const drop = $('drop');
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; loadFile(f); });
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => e.preventDefault());
+
+  people = parseSheet(SAMPLE_AOA).people;
+  render();
+})();
+
+</script>
+</body>
+</html>
